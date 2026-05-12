@@ -347,11 +347,29 @@ class HHApplicantTool(MegaTool):
         
         config_section = config_sections[purpose]
         c = self.config.get(config_section, {})
-        
+
         api_key = c.get("api_key")
+        api_key_keyring = c.get("api_key_keyring")
+        if not api_key and api_key_keyring:
+            try:
+                import keyring  # noqa: PLC0415
+            except ImportError as ex:
+                raise ValueError(
+                    f"'api_key_keyring' указан в '{config_section}', "
+                    "но модуль keyring не установлен."
+                ) from ex
+            # Совместимо со схемой Jarvis: service == username == значение.
+            api_key = keyring.get_password(api_key_keyring, api_key_keyring)
+            if not api_key:
+                raise ValueError(
+                    f"Не найден ключ в keyring для service/username "
+                    f"'{api_key_keyring}'. Сохраните его, например: "
+                    f"keyring set {api_key_keyring} {api_key_keyring}"
+                )
         if not api_key:
             raise ValueError(
-                f"API-ключ не задан. Укажите 'api_key' в секции '{config_section}' конфигурации."
+                f"API-ключ не задан. Укажите 'api_key' (или 'api_key_keyring') "
+                f"в секции '{config_section}' конфигурации."
             )
 
         base_url = c.get("base_url")
@@ -379,6 +397,7 @@ class HHApplicantTool(MegaTool):
             max_completion_tokens=c.get("max_completion_tokens", 1000),
             system_prompt=system_prompt,
             base_url=base_url,
+            api_version=c.get("api_version"),
             rate_limit=c.get("rate_limit", 40),
             session=self.openai_session,
         )

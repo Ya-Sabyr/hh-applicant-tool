@@ -33,6 +33,11 @@ class ChatOpenAI:
     max_completion_tokens: int = 1000
     model: str | None = None
 
+    # Azure OpenAI: если задан api_version, используется Azure-схема
+    # (URL вида {base}/openai/deployments/{deployment}/chat/completions?api-version=...
+    #  и заголовок api-key вместо Authorization: Bearer).
+    api_version: str | None = None
+
     # количество запросов в минуту (0 = отключено)
     rate_limit: int = 40
 
@@ -45,10 +50,36 @@ class ChatOpenAI:
     def __post_init__(self) -> None:
         self._lock = Lock()
 
+    @property
+    def _is_azure(self) -> bool:
+        return bool(self.api_version) or "openai.azure.com" in (
+            self.base_url or ""
+        )
+
     def _default_headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self.api_key}",
-        }
+        if self._is_azure:
+            return {"api-key": self.api_key}
+        return {"Authorization": f"Bearer {self.api_key}"}
+
+    def _resolve_url(self) -> str:
+        if not self._is_azure:
+            return self.base_url
+
+        # Поддержка моделей вида "azure/<deployment>" (litellm-стиль).
+        deployment = (self.model or "").split("/", 1)[-1]
+        base = (self.base_url or "").rstrip("/")
+        # Если пользователь уже указал полный путь до chat/completions,
+        # просто прикрепим api-version.
+        if "/chat/completions" in base:
+            sep = "&" if "?" in base else "?"
+            return f"{base}{sep}api-version={self.api_version}"
+        # Срезаем хвостовой /openai, если он уже в base.
+        if base.endswith("/openai"):
+            base = base[: -len("/openai")]
+        return (
+            f"{base}/openai/deployments/{deployment}"
+            f"/chat/completions?api-version={self.api_version}"
+        )
 
     @property
     def _min_request_interval(self) -> float:
@@ -69,7 +100,7 @@ class ChatOpenAI:
 
             try:
                 return self.session.post(
-                    self.base_url,
+                    self._resolve_url(),
                     json=payload,
                     headers=self._default_headers(),
                     timeout=self.timeout,

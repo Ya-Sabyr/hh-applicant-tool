@@ -84,6 +84,7 @@ class Namespace(BaseNamespace):
     max_responses: int
     send_email: bool
     skip_tests: bool
+    applicant_visibility: str
 
 
 class Operation(BaseOperation):
@@ -164,6 +165,25 @@ class Operation(BaseOperation):
             "--skip-tests",
             help="Пропускать тесты при откликах вместо",
             action=argparse.BooleanOptionalAction,
+        )
+        parser.add_argument(
+            "--applicant-visibility",
+            help="Уровень видимости резюме при отклике (HH API параметр required_applicant_visibility_id)",
+            choices=[
+                "visible",
+                "all",
+                "authorized",
+                "selected",
+                "nobody",
+                "client_contacts",
+                "no_one",
+                "whitelist",
+                "blacklist",
+                "clients",
+                "everyone",
+                "direct",
+            ],
+            default="visible",
         )
         parser.add_argument(
             "--excluded-filter",
@@ -351,6 +371,7 @@ class Operation(BaseOperation):
         self.sort_point_lng = args.sort_point_lng
         self.top_lat = args.top_lat
         self.total_pages = args.total_pages
+        self.applicant_visibility = getattr(args, "applicant_visibility", "visible")
         self.cover_letter_ai = (
             tool.get_cover_letter_ai(args.system_prompt)
             if args.use_ai
@@ -1041,6 +1062,7 @@ class Operation(BaseOperation):
                         "resume_id": resume["id"],
                         "vacancy_id": vacancy_id,
                         "message": letter,
+                        "required_applicant_visibility_id": self.applicant_visibility,
                     }
                     try:
                         if not self.dry_run:
